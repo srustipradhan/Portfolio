@@ -59,8 +59,13 @@ export default function Journey() {
           const S = screens[k];
           return (
             <div key={p.title} className="jm" style={{ background: bgs[k] }}>
+              {k === 0 && <div className="label">( 02 ) Projects</div>}
               <Info p={p} i={k} />
-              <div className="jm-phone"><Phone><S /></Phone></div>
+              <div className="jm-phone">
+                <div className="phone-fit">
+                  <Phone><S /></Phone>
+                </div>
+              </div>
             </div>
           );
         })}

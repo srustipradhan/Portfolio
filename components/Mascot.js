@@ -221,8 +221,11 @@ export default function Mascot() {
       t = setTimeout(next, lo + Math.random() * (hi - lo));
     };
     const stroll = () => {
-      const lo = 20;
-      const hi = Math.min(220, Math.max(lo, window.innerWidth - WIDTH - 20));
+      const vw = window.innerWidth;
+      const isMob = vw < 700;
+      const w = isMob ? 96 : WIDTH;
+      const lo = isMob ? 12 : 20;
+      const hi = isMob ? Math.min(90, Math.max(lo, vw - w - 16)) : Math.min(220, Math.max(lo, vw - w - 20));
       const target = lo + Math.random() * Math.max(0, hi - lo);
       const dist = Math.abs(target - x.get());
       if (dist < 40) {
@@ -268,6 +271,11 @@ export default function Mascot() {
   // Keep panel on screen
   useMotionValueEvent(x, "change", (v) => {
     const w = window.innerWidth;
+    if (w < 700) {
+      const a = openRef.current ? "l" : v < w / 2 - 48 ? "l" : "r";
+      setAlign((p) => (p === a ? p : a));
+      return;
+    }
     const a = v < 190 ? "l" : v > w - WIDTH - 190 ? "r" : "c";
     setAlign((p) => (p === a ? p : a));
   });
@@ -345,7 +353,8 @@ export default function Mascot() {
     }
     if (window.innerWidth < 700) {
       walkCtl.current?.stop();
-      animate(x, 12, { duration: 0.4 });
+      setAlign("l");
+      animate(x, 16, { duration: 0.28 });
     }
     setChatMode(false);
     setOpen(true);
