@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useRef, useSyncExternalStore } from "react";
+import { memo, useEffect, useMemo, useRef, useSyncExternalStore } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { OUTFITS } from "@/lib/outfits";
@@ -143,8 +143,8 @@ function buildHairGeometries() {
     bevelEnabled: true,
     bevelThickness: 0.06,
     bevelSize: 0.03,
-    bevelSegments: 4,
-    curveSegments: 24,
+    bevelSegments: 3,
+    curveSegments: 16,
   });
   // Bend vertices around the forehead sphere and seat seamlessly into the crown
   const bPos = bangsGeo.attributes.position;
@@ -172,7 +172,7 @@ function buildHairGeometries() {
         return new THREE.Vector3(x, y, 0.128 + bangsDomeZ(x, y));
       })
     );
-    return new THREE.TubeGeometry(curve, 16, 0.014, 6, false);
+    return new THREE.TubeGeometry(curve, 12, 0.014, 5, false);
   };
   const highlights = [
     makeHighlight([[178, 70], [170, 92], [170, 112], [182, 128]]),
@@ -201,8 +201,8 @@ function buildHairGeometries() {
     bevelEnabled: true,
     bevelThickness: 0.055,
     bevelSize: 0.032,
-    bevelSegments: 4,
-    curveSegments: 16,
+    bevelSegments: 3,
+    curveSegments: 12,
   };
   const makeCenteredLock = (shape) => {
     const geo = new THREE.ExtrudeGeometry(shape, lockOpts);
@@ -231,8 +231,8 @@ function buildHairGeometries() {
     bevelEnabled: true,
     bevelThickness: 0.09,
     bevelSize: 0.055,
-    bevelSegments: 4,
-    curveSegments: 20,
+    bevelSegments: 3,
+    curveSegments: 14,
   });
   backHairGeo.computeBoundingBox();
   const bhCenter = new THREE.Vector3();
@@ -279,7 +279,7 @@ const GEO = {
 };
 
 // Toon-shaded 3D primitive with black inverted-hull outline
-function Part({ kind = "sphere", args, color, position, rotation, scale, ol = 0.055, ...rest }) {
+const Part = memo(function Part({ kind = "sphere", args, color, position, rotation, scale, ol = 0.055, ...rest }) {
   const G = GEO[kind];
   return (
     <group position={position} rotation={rotation} scale={scale} {...rest}>
@@ -295,9 +295,9 @@ function Part({ kind = "sphere", args, color, position, rotation, scale, ol = 0.
       )}
     </group>
   );
-}
+});
 
-const Flat = ({ kind = "sphere", args, color, position, rotation, scale }) => {
+const Flat = memo(function Flat({ kind = "sphere", args, color, position, rotation, scale }) {
   const G = GEO[kind];
   return (
     <mesh position={position} rotation={rotation} scale={scale}>
@@ -305,9 +305,29 @@ const Flat = ({ kind = "sphere", args, color, position, rotation, scale }) => {
       <meshBasicMaterial color={color} />
     </mesh>
   );
-};
+});
 
-function CharacterModel({ mode, talking, dir, outfit, variant, mouseRef }) {
+const initPose = () => ({
+  rootY: 0,
+  leanX: 0,
+  leanZ: 0,
+  sit: 0,
+  aRx: 0.04,
+  aRz: 0.28,
+  aLx: 0.04,
+  aLz: 0.28,
+  lR: 0,
+  lL: 0,
+  hX: 0,
+  hY: 0,
+  hZ: 0,
+  bob: 0,
+  eyeS: 1,
+  eyeX: 0,
+  eyeY: 0,
+});
+
+const CharacterModel = memo(function CharacterModel({ mode, talking, dir, outfit, variant, mouseRef }) {
   const o = OUTFITS[outfit] || OUTFITS[0];
   const isBust = variant === "bust";
 
@@ -526,6 +546,28 @@ function CharacterModel({ mode, talking, dir, outfit, variant, mouseRef }) {
     };
   }, []);
 
+  useEffect(() => {
+    return () => {
+      const { hair, hoodieFullGeo, hoodieBustGeo, faceBaseGeo, eyeLeftGeo, eyeRightGeo, mouthGeo, tx } = assets;
+      hair.bangsGeo.dispose();
+      hair.bangsOlGeo.dispose();
+      hair.backHairGeo.dispose();
+      hair.leftLock.geo.dispose();
+      hair.rightLock.geo.dispose();
+      hair.highlights.forEach((g) => g.dispose());
+      hoodieFullGeo.dispose();
+      hoodieBustGeo.dispose();
+      faceBaseGeo.dispose();
+      eyeLeftGeo.dispose();
+      eyeRightGeo.dispose();
+      mouthGeo.dispose();
+      [tx.patch, tx.z, tx.q, tx.sticker, tx.star, tx.flash, tx.faceBaseTex, tx.eyeTex, tx.mouthTex, tx.bustPhoneTex].forEach((t) =>
+        t?.dispose()
+      );
+      tx.code.forEach((t) => t?.dispose());
+    };
+  }, [assets]);
+
   const rootRef = useRef(null);
   const torsoRef = useRef(null);
   const headRef = useRef(null);
@@ -548,25 +590,8 @@ function CharacterModel({ mode, talking, dir, outfit, variant, mouseRef }) {
   const codesRefs = useRef([]);
   const sparksRefs = useRef([]);
 
-  const poseRef = useRef({
-    rootY: 0,
-    leanX: 0,
-    leanZ: 0,
-    sit: 0,
-    aRx: 0.04,
-    aRz: 0.28,
-    aLx: 0.04,
-    aLz: 0.28,
-    lR: 0,
-    lL: 0,
-    hX: 0,
-    hY: 0,
-    hZ: 0,
-    bob: 0,
-    eyeS: 1,
-    eyeX: 0,
-    eyeY: 0,
-  });
+  const poseRef = useRef(initPose());
+  const targetRef = useRef(initPose());
   const lastModeRef = useRef("");
   const startRef = useRef(0);
 
@@ -582,26 +607,25 @@ function CharacterModel({ mode, talking, dir, outfit, variant, mouseRef }) {
     const mt = t - startRef.current;
     const s = Math.sin;
 
-    // Default forward-facing pose: ZERO flipping, ZERO turning
-    const T = {
-      rootY: 0,
-      leanX: 0,
-      leanZ: 0,
-      sit: 0,
-      aRx: 0.04,
-      aRz: 0.28,
-      aLx: 0.04,
-      aLz: 0.28,
-      lR: 0,
-      lL: 0,
-      hX: 0,
-      hY: 0,
-      hZ: 0,
-      bob: s(t * 1.8) * (isBust ? 0.025 : 0.012),
-      eyeS: 1,
-      eyeX: 0,
-      eyeY: 0,
-    };
+    // Default forward-facing pose: ZERO flipping, ZERO turning (reuse target object to avoid GC churn)
+    const T = targetRef.current;
+    T.rootY = 0;
+    T.leanX = 0;
+    T.leanZ = 0;
+    T.sit = 0;
+    T.aRx = 0.04;
+    T.aRz = 0.28;
+    T.aLx = 0.04;
+    T.aLz = 0.28;
+    T.lR = 0;
+    T.lL = 0;
+    T.hX = 0;
+    T.hY = 0;
+    T.hZ = 0;
+    T.bob = s(t * 1.8) * (isBust ? 0.025 : 0.012);
+    T.eyeS = 1;
+    T.eyeX = 0;
+    T.eyeY = 0;
     let k = 8;
     let followMouse = true;
 
@@ -775,67 +799,75 @@ function CharacterModel({ mode, talking, dir, outfit, variant, mouseRef }) {
       shadowRef.current.scale.set(1 - p.rootY * 0.35, 1 - p.rootY * 0.35, 1);
     }
 
-    // Props
+    // Props (only run sprite trigonometry when active)
     if (laptopRef.current) laptopRef.current.visible = !isBust && mode === "code";
     const showPhone = isBust || mode === "phone" || (mode === "fit" && mt > 1.2);
     if (phoneRef.current) {
       phoneRef.current.visible = showPhone;
-      if (isBust) {
-        phoneRef.current.rotation.set(0, 0, -p.aRz - 0.17);
-      } else {
-        phoneRef.current.rotation.set(-p.aRx, 0, 0);
+      if (showPhone) {
+        if (isBust) {
+          phoneRef.current.rotation.set(0, 0, -p.aRz - 0.17);
+        } else {
+          phoneRef.current.rotation.set(-p.aRx, 0, 0);
+        }
       }
     }
+    const showCoffee = !isBust && mode === "coffee";
     if (mugRef.current) {
-      mugRef.current.visible = !isBust && mode === "coffee";
-      mugRef.current.rotation.x = -p.aRx;
-    }
-    if (steamRefs.current) {
-      steamRefs.current.forEach((m, i) => {
-        if (!m) return;
-        const ph = (t * 0.6 + i * 0.33) % 1;
-        m.position.y = 0.1 + ph * 0.35;
-        if (m.material) m.material.opacity = Math.sin(Math.PI * ph) * 0.8;
-      });
-    }
-    if (zsRefs.current) {
-      zsRefs.current.forEach((m, i) => {
-        if (!m) return;
-        m.visible = !isBust && mode === "sleep";
-        const ph = (t * 0.45 + i * 0.33) % 1;
-        m.position.set(0.65 + ph * 0.28 + i * 0.08, 2.35 + ph * 0.8, 0.3);
-        if (m.material) m.material.opacity = Math.sin(Math.PI * ph);
-        m.scale.setScalar(0.35 + i * 0.12);
-      });
-    }
-    if (codesRefs.current) {
-      codesRefs.current.forEach((m, i) => {
-        if (!m) return;
-        m.visible = !isBust && mode === "code";
-        const ph = (t * 0.45 + i * 0.25) % 1;
-        m.position.set(i % 2 ? 0.95 : -0.95, 1.15 + ph * 1.4, 0.4);
-        if (m.material) m.material.opacity = Math.sin(Math.PI * ph);
-        m.scale.set(0.55, 0.41, 1);
-      });
-    }
-    if (qRef.current) {
-      qRef.current.visible = !isBust && mode === "look";
-      qRef.current.position.set(0.82, 2.95 + s(t * 5) * 0.08, 0.3);
-      qRef.current.scale.setScalar(0.55 + s(t * 6) * 0.06);
-    }
-    if (sparksRefs.current) {
-      sparksRefs.current.forEach((m, i) => {
-        if (!m) return;
-        const on = !isBust && mode === "fit" && mt > 1.5;
-        m.visible = on;
-        if (!on) return;
-        const ph = (t * 0.9 + i * 0.25) % 1;
-        if (m.material) {
-          m.material.opacity = Math.sin(Math.PI * ph);
-          m.material.rotation = ph * 3;
+      mugRef.current.visible = showCoffee;
+      if (showCoffee) {
+        mugRef.current.rotation.x = -p.aRx;
+        for (let i = 0; i < steamRefs.current.length; i++) {
+          const m = steamRefs.current[i];
+          if (!m) continue;
+          const ph = (t * 0.6 + i * 0.33) % 1;
+          m.position.y = 0.1 + ph * 0.35;
+          if (m.material) m.material.opacity = s(Math.PI * ph) * 0.8;
         }
-        m.scale.setScalar(0.25 + 0.3 * Math.sin(Math.PI * ph));
-      });
+      }
+    }
+    const showSleep = !isBust && mode === "sleep";
+    for (let i = 0; i < zsRefs.current.length; i++) {
+      const m = zsRefs.current[i];
+      if (!m) continue;
+      if (m.visible !== showSleep) m.visible = showSleep;
+      if (!showSleep) continue;
+      const ph = (t * 0.45 + i * 0.33) % 1;
+      m.position.set(0.65 + ph * 0.28 + i * 0.08, 2.35 + ph * 0.8, 0.3);
+      if (m.material) m.material.opacity = s(Math.PI * ph);
+      m.scale.setScalar(0.35 + i * 0.12);
+    }
+    const showCode = !isBust && mode === "code";
+    for (let i = 0; i < codesRefs.current.length; i++) {
+      const m = codesRefs.current[i];
+      if (!m) continue;
+      if (m.visible !== showCode) m.visible = showCode;
+      if (!showCode) continue;
+      const ph = (t * 0.45 + i * 0.25) % 1;
+      m.position.set(i % 2 ? 0.95 : -0.95, 1.15 + ph * 1.4, 0.4);
+      if (m.material) m.material.opacity = s(Math.PI * ph);
+      m.scale.set(0.55, 0.41, 1);
+    }
+    const showLook = !isBust && mode === "look";
+    if (qRef.current) {
+      if (qRef.current.visible !== showLook) qRef.current.visible = showLook;
+      if (showLook) {
+        qRef.current.position.set(0.82, 2.95 + s(t * 5) * 0.08, 0.3);
+        qRef.current.scale.setScalar(0.55 + s(t * 6) * 0.06);
+      }
+    }
+    const showSparks = !isBust && mode === "fit" && mt > 1.5;
+    for (let i = 0; i < sparksRefs.current.length; i++) {
+      const m = sparksRefs.current[i];
+      if (!m) continue;
+      if (m.visible !== showSparks) m.visible = showSparks;
+      if (!showSparks) continue;
+      const ph = (t * 0.9 + i * 0.25) % 1;
+      if (m.material) {
+        m.material.opacity = s(Math.PI * ph);
+        m.material.rotation = ph * 3;
+      }
+      m.scale.setScalar(0.25 + 0.3 * s(Math.PI * ph));
     }
     const fl = !isBust && mode === "fit" ? mt - 1.35 : -1;
     if (flashRef.current) {
@@ -968,7 +1000,7 @@ function CharacterModel({ mode, talking, dir, outfit, variant, mouseRef }) {
           {/* 3D Back hair crown sphere + extruded flared bob */}
           <Part
             kind="sphere"
-            args={[0.74, 32, 24]}
+            args={[0.74, 24, 18]}
             color={HAIR}
             position={[0, 0.34, -0.16]}
             scale={[1.06, 1.12, 0.94]}
@@ -986,7 +1018,7 @@ function CharacterModel({ mode, talking, dir, outfit, variant, mouseRef }) {
           {/* 3D Face ellipsoid with toon shading and crisp black outline */}
           <Part
             kind="sphere"
-            args={[1, 40, 32]}
+            args={[1, 28, 22]}
             color={SKIN}
             scale={[FACE_RX, FACE_RY, FACE_RZ]}
             ol={0.045}
@@ -1078,7 +1110,7 @@ function CharacterModel({ mode, talking, dir, outfit, variant, mouseRef }) {
       </group>
       {!isBust && (
         <mesh ref={shadowRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.012, 0.05]}>
-          <circleGeometry args={[0.62, 32]} />
+          <circleGeometry args={[0.62, 24]} />
           <meshBasicMaterial color="#000" transparent opacity={0.35} />
         </mesh>
       )}
@@ -1114,25 +1146,33 @@ function CharacterModel({ mode, talking, dir, outfit, variant, mouseRef }) {
       </sprite>
     </>
   );
-}
+});
 
 const emptySubscribe = () => () => {};
 function useMounted() {
   return useSyncExternalStore(emptySubscribe, () => true, () => false);
 }
 
-export default function Avatar3D({
+const CAM_BUST = [0, 1.82, 6.2];
+const CAM_FULL = [0, 1.82, 7.7];
+const GL_OPTS = { alpha: true, antialias: true };
+const CANVAS_STYLE = { background: "transparent" };
+const WRAP_STYLE = { width: "100%", height: "100%", userSelect: "none", WebkitUserSelect: "none" };
+const EMPTY_STYLE = { width: "100%", height: "100%" };
+
+const Avatar3D = memo(function Avatar3D({
   mode = "idle",
   talking = false,
   dir = 1,
   outfit = 0,
   variant = "full",
+  active = true,
   cameraPosition,
   fov = 28,
 }) {
   const mounted = useMounted();
   const mouseRef = useRef({ x: 0, y: 0 });
-  const camPos = cameraPosition || (variant === "bust" ? [0, 1.82, 6.2] : [0, 1.82, 7.7]);
+  const camPos = cameraPosition || (variant === "bust" ? CAM_BUST : CAM_FULL);
 
   useEffect(() => {
     const clamp = (v) => (Number.isFinite(v) ? Math.max(-1, Math.min(1, v)) : 0);
@@ -1144,7 +1184,7 @@ export default function Avatar3D({
       mouseRef.current.x = 0;
       mouseRef.current.y = 0;
     };
-    window.addEventListener("mousemove", move);
+    window.addEventListener("mousemove", move, { passive: true });
     document.documentElement.addEventListener("mouseleave", reset);
     return () => {
       window.removeEventListener("mousemove", move);
@@ -1152,17 +1192,18 @@ export default function Avatar3D({
     };
   }, []);
 
-  if (!mounted) return <div style={{ width: "100%", height: "100%" }} />;
+  if (!mounted) return <div style={EMPTY_STYLE} />;
 
   return (
-    <div style={{ width: "100%", height: "100%", userSelect: "none", WebkitUserSelect: "none" }}>
+    <div style={WRAP_STYLE}>
       <Canvas
         flat
-        dpr={[1, 2]}
-        gl={{ alpha: true, antialias: true }}
+        frameloop={active ? "always" : "demand"}
+        dpr={[1, 1.5]}
+        gl={GL_OPTS}
         camera={{ position: camPos, fov }}
         onCreated={({ camera }) => camera.lookAt(0, camPos[1], 0)}
-        style={{ background: "transparent" }}
+        style={CANVAS_STYLE}
       >
         <ambientLight intensity={1.35} />
         <directionalLight position={[3, 5, 5]} intensity={1.35} />
@@ -1178,4 +1219,6 @@ export default function Avatar3D({
       </Canvas>
     </div>
   );
-}
+});
+
+export default Avatar3D;

@@ -16,7 +16,7 @@ function Counter({ to, decimals = 0, suffix = "" }) {
   return <span ref={ref}>{v.toFixed(decimals)}{suffix}</span>;
 }
 
-const stats = [[1, 0, "+", "Years of experience"], [2, 0, "", "Companies"], [3, 0, "", "Projects shipped"], [8.67, 2, "", "B.Sc. CGPA"]];
+const stats = [[1, 0, "+", "Years of experience"], [2, 0, "", "Companies"], [10, 0, "+", "Projects shipped"], [8.67, 2, "", "B.Sc. CGPA"]];
 const up = (d = 0) => ({ initial: { opacity: 0, y: 40 }, whileInView: { opacity: 1, y: 0 }, viewport: { once: true, margin: "-60px" }, transition: { duration: 0.7, delay: d, ease: [0.16, 1, 0.3, 1] } });
 
 export default function About() {

@@ -20,7 +20,7 @@ const replies = [
   },
   {
     q: "Show me your projects",
-    a: "Three highlights: an Energy Monitoring app, a Beauty Marketplace on Go & PostgreSQL, and an AI Travel Assistant that speaks local languages better than I do.",
+    a: "10+ projects shipped overall — three featured here: an Energy Monitoring app, a Beauty Marketplace on Go & PostgreSQL, and an AI Travel Assistant that speaks local languages better than I do.",
     go: "#work",
   },
   {
@@ -84,7 +84,6 @@ function Typed({ text, onDone }) {
 
 export default function Mascot() {
   const x = useMotionValue(-200);
-  const y = useMotionValue(0);
   const layer = useRef(null);
   const logRef = useRef(null);
   const inputRef = useRef(null);
@@ -163,13 +162,22 @@ export default function Mascot() {
     scrollToSelector(sel);
   }, []);
 
-  // Setup: focus & reduced motion
+  // Setup: focus, resize clamp & reduced motion
   useEffect(() => {
     reduced.current = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const fin = (e) => setTyping(!!e.target.matches?.("input, textarea"));
     const fout = () => setTyping(false);
+    const onResize = () => {
+      const vw = window.innerWidth;
+      const w = vw < 700 ? 96 : WIDTH;
+      const max = Math.max(12, vw - w - 12);
+      const cur = x.get();
+      if (cur > max) x.set(max);
+      else if (cur >= 0 && cur < 12) x.set(12);
+    };
     document.addEventListener("focusin", fin);
     document.addEventListener("focusout", fout);
+    window.addEventListener("resize", onResize, { passive: true });
     return () => {
       clearTimeout(hideTimer.current);
       clearTimeout(replyTimer.current);
@@ -177,9 +185,10 @@ export default function Mascot() {
       clearTimeout(actTimer.current);
       document.removeEventListener("focusin", fin);
       document.removeEventListener("focusout", fout);
+      window.removeEventListener("resize", onResize);
       window.speechSynthesis?.cancel();
     };
-  }, []);
+  }, [x]);
 
   // Brief welcome once on entry
   useEffect(() => {
@@ -265,7 +274,9 @@ export default function Mascot() {
       stopped = true;
       clearTimeout(t);
       walkCtl.current?.stop();
-      setMode((m) => (m === "held" ? m : "idle"));
+      if (!openRef.current && !draggingRef.current) {
+        setMode((m) => (m === "held" ? m : "idle"));
+      }
     };
   }, [ready, open, dragging, typing, hidden, x]);
 
@@ -344,6 +355,7 @@ export default function Mascot() {
 
   const toggleOpen = () => {
     if (open) {
+      openRef.current = false;
       setOpen(false);
       setChatMode(false);
       setMsg(null);
@@ -352,8 +364,9 @@ export default function Mascot() {
       window.speechSynthesis?.cancel();
       return;
     }
+    openRef.current = true;
+    walkCtl.current?.stop();
     if (window.innerWidth < 700) {
-      walkCtl.current?.stop();
       setAlign("l");
       animate(x, 16, { duration: 0.28 });
     }
@@ -379,7 +392,7 @@ export default function Mascot() {
         </button>
       )}
       {!hidden && (
-        <motion.div className="mascot-wrap" style={{ x, y, width: WIDTH }}>
+        <motion.div className="mascot-wrap" style={{ x, width: WIDTH }}>
           <AnimatePresence>
             {(open || msg) && (
               <motion.div
@@ -493,8 +506,8 @@ export default function Mascot() {
       {!hidden && (
         <motion.div
           className="mascot"
-          style={{ x, y, width: WIDTH }}
-          drag
+          style={{ x, width: WIDTH }}
+          drag={!open ? "x" : false}
           dragConstraints={layer}
           dragElastic={0}
           dragMomentum={false}
@@ -519,11 +532,17 @@ export default function Mascot() {
             draggingRef.current = false;
             setDragging(false);
             setMode("idle");
-            animate(y, 0, { type: "spring", stiffness: 260, damping: 14 });
           }}
-          whileHover={{ scale: 1.05, y: -3 }}
+          onPointerCancel={() => {
+            if (!draggingRef.current) return;
+            draggingRef.current = false;
+            setDragging(false);
+            setMode("idle");
+          }}
         >
-          <Avatar3D mode={mode} talking={talking} dir={dir} outfit={0} />
+          <div className="mascot-body">
+            <Avatar3D mode={mode} talking={talking} dir={dir} outfit={0} />
+          </div>
         </motion.div>
       )}
     </div>

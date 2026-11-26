@@ -11,7 +11,7 @@ const links = [
 
 const sections = {
   about: { num: "01", label: "About" },
-  work: { num: "02", label: "Projects" },
+  work: { num: "02", label: "Selected Projects" },
   skills: { num: "03", label: "Skills" },
   experience: { num: "04", label: "Experience" },
   contact: { num: "05", label: "Contact" },
