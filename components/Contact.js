@@ -180,7 +180,7 @@ export default function Contact() {
                   </>
                 );
                 return (
-                  <motion.div key={t.label} className={`tile ${t.cls}`} {...up(0.08 * i)} whileHover={t.href ? { y: -6 } : undefined}>
+                  <motion.div key={t.label} className={`tile ${t.cls}`} {...up(0.08 * i)} whileHover={t.href ? { y: -6 } : undefined} whileTap={t.href ? { scale: 0.97 } : undefined}>
                     {t.href ? (
                       <a className="tile-main" href={t.href} target={t.external ? "_blank" : undefined} rel="noreferrer">{inner}<span className="go">↗</span></a>
                     ) : <div className="tile-main">{inner}</div>}

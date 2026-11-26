@@ -19,6 +19,35 @@ const sections = {
 
 export default function Nav() {
   const [sec, setSec] = useState("top");
+  // colours of whatever is directly behind the header, so its text always has proper contrast
+  const [theme, setTheme] = useState({ bg: "transparent", fg: "#fff" });
+
+  useEffect(() => {
+    let raf = 0;
+    const sample = () => {
+      raf = 0;
+      let bg = [10, 10, 10];
+      for (const el of document.elementsFromPoint(window.innerWidth / 2, 3)) {
+        if (el.closest(".nav, .mascot-layer, .cursor")) continue;
+        const m = getComputedStyle(el).backgroundColor.match(/rgba?\(([^)]+)\)/);
+        if (!m) continue;
+        const [r, g, b, a = 1] = m[1].split(/[,\s/]+/).filter(Boolean).map(Number);
+        if (a > 0.5) { bg = [r, g, b]; break; }
+      }
+      const lum = (0.299 * bg[0] + 0.587 * bg[1] + 0.114 * bg[2]) / 255;
+      const next = { bg: window.scrollY > 30 ? `rgb(${bg.join(",")})` : "transparent", fg: lum > 0.45 ? "#0a0a0a" : "#fff" };
+      setTheme((t) => (t.bg === next.bg && t.fg === next.fg ? t : next));
+    };
+    const onScroll = () => { if (!raf) raf = requestAnimationFrame(sample); };
+    sample();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", onScroll);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", onScroll);
+    };
+  }, []);
 
   useEffect(() => {
     const obs = new IntersectionObserver(
@@ -42,6 +71,7 @@ export default function Nav() {
   return (
     <motion.header
       className="nav"
+      style={{ backgroundColor: theme.bg, color: theme.fg }}
       initial={{ y: -40, opacity: 0 }}
       animate={{ y: 0, opacity: 1 }}
       transition={{ delay: 0.8, duration: 0.6 }}

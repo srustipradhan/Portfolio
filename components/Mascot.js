@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, animate, motion, useMotionValue, useMotionValueEvent } from "framer-motion";
 import Avatar3D from "./Avatar3D";
 import { replyToChat } from "@/lib/chat";
+import { scrollToSelector } from "@/lib/scroll";
 
 const WIDTH = 130;
 
@@ -159,7 +160,7 @@ export default function Mascot() {
   }, []);
 
   const scrollTo = useCallback((sel) => {
-    document.querySelector(sel)?.scrollIntoView({ behavior: "smooth" });
+    scrollToSelector(sel);
   }, []);
 
   // Setup: focus & reduced motion

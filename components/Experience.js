@@ -16,7 +16,7 @@ export default function Experience() {
         <h2 className="sec-title dark">THE <span>JOURNEY</span> SO FAR</h2>
         <div className="stack">
           {cards.map((c, i) => (
-            <motion.article key={c.title} className="scard" style={{ background: palette[i][0], color: palette[i][1], top: 90 + i * 26 }}
+            <motion.article key={c.title} className="scard" style={{ background: palette[i][0], color: palette[i][1], "--i": i }}
               initial={{ opacity: 0, y: 80 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: "-60px" }} transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}>
               <div className="sc-l">
                 <span className="sc-kind">{c.kind}</span>
