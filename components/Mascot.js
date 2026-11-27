@@ -1,11 +1,10 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AnimatePresence, animate, motion, useMotionValue, useMotionValueEvent } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import Avatar3D from "./Avatar3D";
 import { replyToChat } from "@/lib/chat";
+import { getPreferredVoice, onVoicesChanged, setPreferredVoice, speakText, stopSpeaking, voiceOptions, voiceSupported } from "@/lib/voice";
 import { scrollToSelector } from "@/lib/scroll";
-
-const WIDTH = 130;
 
 const replies = [
   {
@@ -35,13 +34,12 @@ const replies = [
   },
 ];
 
-// Calm ambient animations (never flips, turns, or spams bubbles)
+// Calm stationary ambient poses (never walks away, flips, turns, or spams bubbles)
 const ACTS = [
-  ["idle", 34],
-  ["code", 24],
+  ["idle", 38],
+  ["code", 26],
   ["coffee", 18],
-  ["phone", 14],
-  ["walk", 10],
+  ["phone", 18],
 ];
 const ACT_MS = { idle: 4500, code: 8000, coffee: 6500, phone: 6500 };
 
@@ -83,13 +81,10 @@ function Typed({ text, onDone }) {
 }
 
 export default function Mascot() {
-  const x = useMotionValue(-200);
-  const layer = useRef(null);
   const logRef = useRef(null);
   const inputRef = useRef(null);
 
   const [mode, setMode] = useState("idle");
-  const [dir, setDir] = useState(1);
   const [msg, setMsg] = useState(null);
   const [chatMode, setChatMode] = useState(false);
   const [messages, setMessages] = useState([]);
@@ -98,14 +93,31 @@ export default function Mascot() {
   const [talking, setTalking] = useState(false);
   const [open, setOpen] = useState(false);
   const [voice, setVoice] = useState(false);
+  const [speaking, setSpeaking] = useState(false);
+  const [voiceNote, setVoiceNote] = useState("");
+  const [voices, setVoices] = useState([]);
+  const [voiceId, setVoiceId] = useState("");
+  const [canSpeak, setCanSpeak] = useState(true);
+  useEffect(() => {
+    const load = () => {
+      setCanSpeak(voiceSupported());
+      const opts = voiceOptions();
+      setVoices(opts);
+      const saved = getPreferredVoice();
+      if (saved && opts.some((o) => o.id === saved)) setVoiceId(saved);
+      else if (opts[0]) setVoiceId(opts[0].id);
+    };
+    const t = setTimeout(load, 0);
+    const off = onVoicesChanged(load);
+    return () => {
+      clearTimeout(t);
+      off();
+    };
+  }, []);
   const [hidden, setHidden] = useState(false);
-  const [dragging, setDragging] = useState(false);
   const [typing, setTyping] = useState(false);
   const [ready, setReady] = useState(false);
-  const [align, setAlign] = useState("l");
 
-  const draggingRef = useRef(false);
-  const walkCtl = useRef(null);
   const hideTimer = useRef(null);
   const replyTimer = useRef(null);
   const talkTimer = useRef(null);
@@ -113,6 +125,7 @@ export default function Mascot() {
   const msgId = useRef(0);
   const openRef = useRef(false);
   const voiceRef = useRef(false);
+  const speakingRef = useRef(false);
   const reduced = useRef(false);
 
   useEffect(() => {
@@ -126,19 +139,18 @@ export default function Mascot() {
     }
   }, [messages, botTyping, chatMode]);
 
+  const voiceMessage = (code) =>
+    code === "not-allowed" ? "Your browser blocked audio. Click anywhere on the page, then switch the sound on again."
+    : code === "no-audio" ? "The voice didn't start. Check your volume and that this browser has a speech voice installed."
+    : `Voice problem (${code}).`;
+
   const speak = useCallback((text) => {
-    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
-    window.speechSynthesis.cancel();
-    if (!voiceRef.current) return;
-    const u = new SpeechSynthesisUtterance(text);
-    const vs = window.speechSynthesis.getVoices();
-    const v =
-      vs.find((c) => /^en/i.test(c.lang) && /female|samantha|zira|heera|veena|karen|moira|tessa|google/i.test(c.name)) ||
-      vs.find((c) => /^en/i.test(c.lang));
-    if (v) u.voice = v;
-    u.pitch = 1.15;
-    u.rate = 1.02;
-    window.speechSynthesis.speak(u);
+    if (!voiceRef.current) { stopSpeaking(); speakingRef.current = false; setSpeaking(false); return; }
+    speakText(text, {
+      onStart: () => { speakingRef.current = true; setSpeaking(true); setTalking(true); setVoiceNote(""); },
+      onEnd: () => { speakingRef.current = false; setSpeaking(false); setTalking(false); },
+      onError: (code) => { speakingRef.current = false; setSpeaking(false); setVoiceNote(voiceMessage(code)); },
+    });
   }, []);
 
   const say = useCallback(
@@ -153,7 +165,7 @@ export default function Mascot() {
   );
 
   const onTyped = useCallback(() => {
-    setTalking(false);
+    if (!speakingRef.current) setTalking(false);
     clearTimeout(hideTimer.current);
     if (!openRef.current) hideTimer.current = setTimeout(() => setMsg(null), 4000);
   }, []);
@@ -162,22 +174,13 @@ export default function Mascot() {
     scrollToSelector(sel);
   }, []);
 
-  // Setup: focus, resize clamp & reduced motion
+  // Setup: focus & reduced motion
   useEffect(() => {
     reduced.current = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const fin = (e) => setTyping(!!e.target.matches?.("input, textarea"));
     const fout = () => setTyping(false);
-    const onResize = () => {
-      const vw = window.innerWidth;
-      const w = vw < 700 ? 96 : WIDTH;
-      const max = Math.max(12, vw - w - 12);
-      const cur = x.get();
-      if (cur > max) x.set(max);
-      else if (cur >= 0 && cur < 12) x.set(12);
-    };
     document.addEventListener("focusin", fin);
     document.addEventListener("focusout", fout);
-    window.addEventListener("resize", onResize, { passive: true });
     return () => {
       clearTimeout(hideTimer.current);
       clearTimeout(replyTimer.current);
@@ -185,83 +188,43 @@ export default function Mascot() {
       clearTimeout(actTimer.current);
       document.removeEventListener("focusin", fin);
       document.removeEventListener("focusout", fout);
-      window.removeEventListener("resize", onResize);
-      window.speechSynthesis?.cancel();
+      stopSpeaking();
     };
-  }, [x]);
+  }, []);
 
-  // Brief welcome once on entry
+  // Brief in-place welcome once on entry (stays firmly anchored at bottom-left)
   useEffect(() => {
-    let t1;
-    let t2;
-    let ctl;
     if (reduced.current) {
-      x.set(24);
-      setReady(true);
-      return;
+      const t = setTimeout(() => setReady(true), 0);
+      return () => clearTimeout(t);
     }
-    t1 = setTimeout(() => {
-      setMode("walk");
-      setDir(1);
-      ctl = animate(x, 24, {
-        duration: 1.8,
-        ease: "linear",
-        onComplete: () => {
-          setMode("wave");
-          setReady(true);
-          say("Hey, I'm Srusti — click me to chat.");
-          t2 = setTimeout(() => setMode((m) => (m === "wave" ? "idle" : m)), 2200);
-        },
-      });
-    }, 1200);
+    let t2;
+    const t1 = setTimeout(() => {
+      setReady(true);
+      if (openRef.current) return;
+      setMode("wave");
+      say("Hey, I'm Srusti — click me to chat.");
+      t2 = setTimeout(() => setMode((m) => (m === "wave" ? "idle" : m)), 2200);
+    }, 900);
     return () => {
       clearTimeout(t1);
       clearTimeout(t2);
-      ctl?.stop();
     };
-  }, [x, say]);
+  }, [say]);
 
-  // Subtle ambient poses only (no random speech bubbles while reading)
+  // Subtle stationary ambient poses only (no movement across screen)
   useEffect(() => {
-    if (!ready || reduced.current || open || dragging || typing || hidden) return;
+    if (!ready || reduced.current || open || typing || hidden) return;
     let t;
     let stopped = false;
     let last = "";
     const rest = (lo, hi) => {
       t = setTimeout(next, lo + Math.random() * (hi - lo));
     };
-    const stroll = () => {
-      const vw = window.innerWidth;
-      const isMob = vw < 700;
-      const w = isMob ? 96 : WIDTH;
-      const lo = isMob ? 12 : 20;
-      const hi = isMob ? Math.min(90, Math.max(lo, vw - w - 16)) : Math.min(220, Math.max(lo, vw - w - 20));
-      const target = lo + Math.random() * Math.max(0, hi - lo);
-      const dist = Math.abs(target - x.get());
-      if (dist < 40) {
-        rest(2500, 4500);
-        return;
-      }
-      setDir(target > x.get() ? 1 : -1);
-      setMode("walk");
-      walkCtl.current = animate(x, target, {
-        duration: dist / 75,
-        ease: "linear",
-        onComplete: () => {
-          if (stopped) return;
-          setMode("idle");
-          rest(3000, 5500);
-        },
-      });
-    };
     function next() {
       if (stopped) return;
       const act = pickAct(last);
       last = act;
-      if (act === "walk") {
-        stroll();
-        return;
-      }
       setMode(act);
       t = setTimeout(() => {
         if (stopped) return;
@@ -273,24 +236,9 @@ export default function Mascot() {
     return () => {
       stopped = true;
       clearTimeout(t);
-      walkCtl.current?.stop();
-      if (!openRef.current && !draggingRef.current) {
-        setMode((m) => (m === "held" ? m : "idle"));
-      }
+      if (!openRef.current) setMode("idle");
     };
-  }, [ready, open, dragging, typing, hidden, x]);
-
-  // Keep panel on screen
-  useMotionValueEvent(x, "change", (v) => {
-    const w = window.innerWidth;
-    if (w < 700) {
-      const a = openRef.current ? "l" : v < w / 2 - 48 ? "l" : "r";
-      setAlign((p) => (p === a ? p : a));
-      return;
-    }
-    const a = v < 190 ? "l" : v > w - WIDTH - 190 ? "r" : "c";
-    setAlign((p) => (p === a ? p : a));
-  });
+  }, [ready, open, typing, hidden]);
 
   const ask = useCallback(
     (r) => {
@@ -326,7 +274,7 @@ export default function Mascot() {
         setBotTyping(false);
         setTalking(true);
         speak(res.text);
-        talkTimer.current = setTimeout(() => setTalking(false), 1600);
+        talkTimer.current = setTimeout(() => { if (!speakingRef.current) setTalking(false); }, 1600);
 
         if (res.mood) {
           setMode(res.mood);
@@ -338,19 +286,35 @@ export default function Mascot() {
   );
 
   const toggleVoice = () => {
+    if (!voiceSupported()) { setVoiceNote("This browser can't do text-to-speech. Try Chrome, Edge or Safari."); return; }
     const next = !voice;
     voiceRef.current = next;
     setVoice(next);
-    if (next) speak("Voice is on.");
-    else window.speechSynthesis?.cancel();
+    setVoiceNote("");
+    if (next) {
+      speak(msg?.text || "Hi, I'm Srusti. Click a question or ask anything!");
+    } else {
+      stopSpeaking();
+      speakingRef.current = false;
+      setSpeaking(false);
+      setTalking(false);
+    }
+  };
+
+  const onPickVoice = (e) => {
+    const id = e.target.value;
+    setVoiceId(id);
+    setPreferredVoice(id);
+    if (voiceRef.current) speak("Hi, I'm Srusti — how does this voice sound?");
   };
 
   const hide = () => {
+    openRef.current = false;
     setOpen(false);
     setChatMode(false);
     setMsg(null);
     setHidden(true);
-    window.speechSynthesis?.cancel();
+    stopSpeaking();
   };
 
   const toggleOpen = () => {
@@ -361,15 +325,10 @@ export default function Mascot() {
       setMsg(null);
       setMode("idle");
       setTalking(false);
-      window.speechSynthesis?.cancel();
+      stopSpeaking();
       return;
     }
     openRef.current = true;
-    walkCtl.current?.stop();
-    if (window.innerWidth < 700) {
-      setAlign("l");
-      animate(x, 16, { duration: 0.28 });
-    }
     setChatMode(false);
     setOpen(true);
     setMode("wave");
@@ -377,14 +336,14 @@ export default function Mascot() {
   };
 
   return (
-    <div className="mascot-layer" ref={layer}>
+    <div className={`mascot-layer${open ? " open" : ""}`}>
       {hidden && (
         <button
           className="mascot-call"
           onClick={() => {
             setHidden(false);
             setMode("wave");
-            setTimeout(() => setMode("idle"), 1800);
+            setTimeout(() => setMode((m) => (m === "wave" ? "idle" : m)), 1800);
           }}
           data-hover
         >
@@ -392,18 +351,23 @@ export default function Mascot() {
         </button>
       )}
       {!hidden && (
-        <motion.div className="mascot-wrap" style={{ x, width: WIDTH }}>
+        <motion.div
+          className="mascot-dock"
+          initial={{ opacity: 0, y: 18 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
+        >
           <AnimatePresence>
             {(open || msg) && (
               <motion.div
                 key={open ? "panel" : "bubble"}
-                className={`bubble ${align} ${open ? "panel" : ""}`}
+                className={`bubble l${open ? " panel" : ""}`}
                 onPointerDown={(e) => e.stopPropagation()}
                 onClick={(e) => e.stopPropagation()}
-                initial={{ opacity: 0, scale: 0.7, y: 10 }}
+                initial={{ opacity: 0, scale: 0.9, y: 10 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.8 }}
-                transition={{ type: "spring", stiffness: 260, damping: 18 }}
+                exit={{ opacity: 0, scale: 0.9, y: 8 }}
+                transition={{ type: "spring", stiffness: 280, damping: 22 }}
               >
                 {open && (
                   <div className="panel-top">
@@ -421,8 +385,43 @@ export default function Mascot() {
                           Chat
                         </button>
                       )}
-                      <button type="button" className={voice ? "vbtn on" : "vbtn"} onClick={toggleVoice} aria-pressed={voice}>
-                        {voice ? "Voice on" : "Voice off"}
+                      <button
+                        type="button"
+                        className={`snd${voice ? " on" : ""}${speaking ? " speaking" : ""}`}
+                        onClick={toggleVoice}
+                        aria-pressed={voice}
+                        aria-label={voice ? "Turn sound off" : "Turn sound on"}
+                        title={!canSpeak ? "Speech isn't supported in this browser" : voice ? "Sound on (click to mute)" : "Sound off (click to hear her)"}
+                        disabled={!canSpeak}
+                      >
+                        <svg viewBox="0 0 34 32" width="21" height="20" aria-hidden="true">
+                          <g transform="rotate(-10 15 16)">
+                            <path
+                              d="M9.5 18.5 L8 25.5 C7.7 26.8 8.7 27.5 10 27.5 L11.4 27.5 C12.4 27.5 13.1 26.8 13.3 25.8 L14.4 19.5"
+                              fill="#FF5A1F"
+                              stroke="#0A0A0A"
+                              strokeWidth="2.2"
+                              strokeLinejoin="round"
+                            />
+                            <path
+                              d="M4.5 15.2 C4.5 13.2 6 11.8 8 11.8 L11.8 11.8 L20.5 6.4 C21.8 5.6 23.4 6.5 23.4 8 L23.4 22.4 C23.4 23.9 21.8 24.8 20.5 24 L11.8 18.6 L8 18.6 C6 18.6 4.5 17.2 4.5 15.2 Z"
+                              fill="#F4F1EA"
+                              stroke="#0A0A0A"
+                              strokeWidth="2.2"
+                              strokeLinejoin="round"
+                            />
+                            <path d="M11.6 12 L11.6 18.4" stroke="#0A0A0A" strokeWidth="2.2" />
+                            <path d="M14.2 12.2 L19.2 9.2" stroke="#FF5A1F" strokeWidth="2.2" strokeLinecap="round" opacity={voice ? 1 : 0.45} />
+                            {voice ? (
+                              <>
+                                <path className="w1" d="M25.6 11.6 Q28.2 15.2 25.6 18.8" fill="none" stroke="#0A0A0A" strokeWidth="2.4" strokeLinecap="round" />
+                                <path className="w2" d="M28.2 8.8 Q31.6 15.2 28.2 21.6" fill="none" stroke="#0A0A0A" strokeWidth="2.4" strokeLinecap="round" />
+                              </>
+                            ) : (
+                              <path d="M25.4 12.2 L29.8 17.8 M29.8 12.2 L25.4 17.8" stroke="#FF5A1F" strokeWidth="2.8" strokeLinecap="round" />
+                            )}
+                          </g>
+                        </svg>
                       </button>
                       <button type="button" className="xbtn" onClick={toggleOpen} aria-label="Close chat">
                         ×
@@ -431,50 +430,65 @@ export default function Mascot() {
                   </div>
                 )}
 
-                {open && chatMode ? (
-                  <div className="chat-log" ref={logRef} aria-live="polite">
-                    {messages.map((m) => (
-                      <div key={m.id} className={`chat-msg ${m.from}`}>
-                        <span>{m.text}</span>
-                        {m.go && (
-                          <button
-                            type="button"
-                            className="chat-go"
-                            onClick={() => {
-                              scrollTo(m.go);
-                              if (window.innerWidth < 700) setOpen(false);
-                            }}
-                          >
-                            {m.goLabel || "Go there"} →
-                          </button>
-                        )}
-                      </div>
-                    ))}
-                    {botTyping && (
-                      <div className="chat-typing" aria-label="Typing">
-                        <i />
-                        <i />
-                        <i />
-                      </div>
-                    )}
+                {open && voice && voices.length > 1 && (
+                  <div className="voice-bar">
+                    <label htmlFor="srusti-voice">Voice</label>
+                    <select id="srusti-voice" value={voiceId} onChange={onPickVoice}>
+                      {voices.map((v) => (
+                        <option key={v.id} value={v.id}>{v.label}</option>
+                      ))}
+                    </select>
                   </div>
-                ) : (
-                  <>
-                    <p aria-live="polite">{msg && <Typed key={msg.id} text={msg.text} onDone={onTyped} />}</p>
-                    {open && (
-                      <div className="replies">
-                        {replies.map((r) => (
-                          <button type="button" key={r.q} onClick={() => ask(r)}>
-                            {r.q}
-                          </button>
-                        ))}
-                        <button type="button" className="hide" onClick={hide}>
-                          Hide me
-                        </button>
-                      </div>
-                    )}
-                  </>
                 )}
+
+                {open && voiceNote && <p className="vnote" role="status">{voiceNote}</p>}
+
+                <div className="panel-body" ref={open && chatMode ? logRef : undefined}>
+                  {open && chatMode ? (
+                    <div className="chat-log" aria-live="polite">
+                      {messages.map((m) => (
+                        <div key={m.id} className={`chat-msg ${m.from}`}>
+                          <span>{m.text}</span>
+                          {m.go && (
+                            <button
+                              type="button"
+                              className="chat-go"
+                              onClick={() => {
+                                scrollTo(m.go);
+                                if (window.innerWidth < 700) setOpen(false);
+                              }}
+                            >
+                              {m.goLabel || "Go there"} →
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                      {botTyping && (
+                        <div className="chat-typing" aria-label="Typing">
+                          <i />
+                          <i />
+                          <i />
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <>
+                      <p aria-live="polite">{msg && <Typed key={msg.id} text={msg.text} onDone={onTyped} />}</p>
+                      {open && (
+                        <div className="replies">
+                          {replies.map((r) => (
+                            <button type="button" key={r.q} onClick={() => ask(r)}>
+                              {r.q}
+                            </button>
+                          ))}
+                          <button type="button" className="hide" onClick={hide}>
+                            Hide me
+                          </button>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
 
                 {open && (
                   <form
@@ -501,47 +515,24 @@ export default function Mascot() {
               </motion.div>
             )}
           </AnimatePresence>
-        </motion.div>
-      )}
-      {!hidden && (
-        <motion.div
-          className="mascot"
-          style={{ x, width: WIDTH }}
-          drag={!open ? "x" : false}
-          dragConstraints={layer}
-          dragElastic={0}
-          dragMomentum={false}
-          data-hover
-          role="button"
-          tabIndex={0}
-          aria-label="Chat with Srusti"
-          onKeyDown={(e) => {
-            if (e.key === "Enter" || e.key === " ") {
-              e.preventDefault();
-              toggleOpen();
-            }
-          }}
-          onTap={toggleOpen}
-          onDragStart={() => {
-            walkCtl.current?.stop();
-            draggingRef.current = true;
-            setDragging(true);
-            setMode("held");
-          }}
-          onDragEnd={() => {
-            draggingRef.current = false;
-            setDragging(false);
-            setMode("idle");
-          }}
-          onPointerCancel={() => {
-            if (!draggingRef.current) return;
-            draggingRef.current = false;
-            setDragging(false);
-            setMode("idle");
-          }}
-        >
-          <div className="mascot-body">
-            <Avatar3D mode={mode} talking={talking} dir={dir} outfit={0} />
+
+          <div
+            className="mascot"
+            data-hover
+            role="button"
+            tabIndex={0}
+            aria-label="Chat with Srusti"
+            onClick={toggleOpen}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                toggleOpen();
+              }
+            }}
+          >
+            <div className="mascot-body">
+              <Avatar3D mode={mode} talking={talking} dir={1} outfit={0} />
+            </div>
           </div>
         </motion.div>
       )}

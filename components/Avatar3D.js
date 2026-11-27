@@ -1,5 +1,5 @@
 "use client";
-import { memo, useEffect, useMemo, useRef, useSyncExternalStore } from "react";
+import { Component, memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { OUTFITS } from "@/lib/outfits";
@@ -545,28 +545,6 @@ const CharacterModel = memo(function CharacterModel({ mode, talking, dir, outfit
       tx,
     };
   }, []);
-
-  useEffect(() => {
-    return () => {
-      const { hair, hoodieFullGeo, hoodieBustGeo, faceBaseGeo, eyeLeftGeo, eyeRightGeo, mouthGeo, tx } = assets;
-      hair.bangsGeo.dispose();
-      hair.bangsOlGeo.dispose();
-      hair.backHairGeo.dispose();
-      hair.leftLock.geo.dispose();
-      hair.rightLock.geo.dispose();
-      hair.highlights.forEach((g) => g.dispose());
-      hoodieFullGeo.dispose();
-      hoodieBustGeo.dispose();
-      faceBaseGeo.dispose();
-      eyeLeftGeo.dispose();
-      eyeRightGeo.dispose();
-      mouthGeo.dispose();
-      [tx.patch, tx.z, tx.q, tx.sticker, tx.star, tx.flash, tx.faceBaseTex, tx.eyeTex, tx.mouthTex, tx.bustPhoneTex].forEach((t) =>
-        t?.dispose()
-      );
-      tx.code.forEach((t) => t?.dispose());
-    };
-  }, [assets]);
 
   const rootRef = useRef(null);
   const torsoRef = useRef(null);
@@ -1157,8 +1135,94 @@ const CAM_BUST = [0, 1.82, 6.2];
 const CAM_FULL = [0, 1.82, 7.7];
 const GL_OPTS = { alpha: true, antialias: true };
 const CANVAS_STYLE = { background: "transparent" };
-const WRAP_STYLE = { width: "100%", height: "100%", userSelect: "none", WebkitUserSelect: "none" };
+const WRAP_STYLE = { position: "relative", width: "100%", height: "100%", userSelect: "none", WebkitUserSelect: "none" };
+const FALLBACK_STYLE = { position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none" };
 const EMPTY_STYLE = { width: "100%", height: "100%" };
+
+class CanvasErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { failed: false };
+  }
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  render() {
+    if (this.state.failed) return this.props.fallback;
+    return this.props.children;
+  }
+}
+
+function FallbackAvatar({ variant = "full", outfit = 0 }) {
+  const o = OUTFITS[outfit] || OUTFITS[0];
+  const isBust = variant === "bust";
+  return (
+    <svg
+      viewBox={isBust ? "0 6 160 170" : "0 0 160 255"}
+      preserveAspectRatio="xMidYMax meet"
+      style={FALLBACK_STYLE}
+      aria-hidden="true"
+    >
+      {/* Back hair bob */}
+      <path
+        d="M36 74 C32 30 56 14 80 14 C104 14 128 30 124 74 C126 94 128 106 131 115 C120 120 110 116 106 108 L54 108 C50 116 40 120 29 115 C32 106 34 94 36 74 Z"
+        fill={HAIR}
+        stroke={INK}
+        strokeWidth="4"
+        strokeLinejoin="round"
+      />
+      {/* Legs & shoes */}
+      {!isBust && (
+        <g>
+          <rect x="61" y="182" width="13" height="44" rx="6.5" fill={o.pants} stroke={INK} strokeWidth="3.5" />
+          <rect x="86" y="182" width="13" height="44" rx="6.5" fill={o.pants} stroke={INK} strokeWidth="3.5" />
+          <ellipse cx="67" cy="230" rx="14" ry="8.5" fill={o.shoes} stroke={INK} strokeWidth="3.5" />
+          <ellipse cx="93" cy="230" rx="14" ry="8.5" fill={o.shoes} stroke={INK} strokeWidth="3.5" />
+        </g>
+      )}
+      {/* Arms & hands */}
+      <g>
+        <rect x="33" y="126" width="14" height="42" rx="7" transform="rotate(14 40 126)" fill={o.top} stroke={INK} strokeWidth="3.5" />
+        <circle cx="34" cy="170" r="8.5" fill={SKIN} stroke={INK} strokeWidth="3.5" />
+        <rect x="113" y="126" width="14" height="42" rx="7" transform="rotate(-14 120 126)" fill={o.top} stroke={INK} strokeWidth="3.5" />
+        <circle cx="126" cy="170" r="8.5" fill={SKIN} stroke={INK} strokeWidth="3.5" />
+      </g>
+      {/* Hoodie body */}
+      <path
+        d="M52 118 C42 126 39 156 42 184 L118 184 C121 156 118 126 108 118 Z"
+        fill={o.top}
+        stroke={INK}
+        strokeWidth="4"
+        strokeLinejoin="round"
+      />
+      <rect x="62" y="138" width="36" height="20" rx="3" fill={o.patch} />
+      <text x="80" y="152" textAnchor="middle" fontSize="11" fontWeight="700" fontFamily="monospace" fill={o.patchText}>
+        {"</>"}
+      </text>
+      {/* Face */}
+      <ellipse cx="80" cy="74" rx="39" ry="36" fill={SKIN} stroke={INK} strokeWidth="4" />
+      <ellipse cx="53" cy="86" rx="7" ry="4.5" fill="#FF6B4A" opacity="0.55" />
+      <ellipse cx="107" cy="86" rx="7" ry="4.5" fill="#FF6B4A" opacity="0.55" />
+      <path d="M57 59 Q65 54 73 58" fill="none" stroke={HAIR} strokeWidth="3" strokeLinecap="round" />
+      <path d="M87 58 Q95 54 103 59" fill="none" stroke={HAIR} strokeWidth="3" strokeLinecap="round" />
+      <ellipse cx="64" cy="73" rx="6.5" ry="8" fill={INK} />
+      <circle cx="66" cy="70" r="2.5" fill="#fff" />
+      <ellipse cx="96" cy="73" rx="6.5" ry="8" fill={INK} />
+      <circle cx="98" cy="70" r="2.5" fill="#fff" />
+      <path d="M67 89 Q80 105 93 89 Z" fill="#4A1410" stroke={INK} strokeWidth="2.5" strokeLinejoin="round" />
+      <path d="M69 90 H91 Q80 96 69 90 Z" fill="#fff" />
+      {/* Bangs & lime hair clip */}
+      <path
+        d="M36 74 C34 32 56 14 80 14 C105 14 126 32 124 74 C118 52 106 42 82 40 C62 46 46 58 36 74 Z"
+        fill={HAIR}
+        stroke={INK}
+        strokeWidth="3.5"
+        strokeLinejoin="round"
+      />
+      <rect x="97" y="42" width="16" height="6.5" rx="3.25" transform="rotate(-28 105 45)" fill="#D6FF3F" stroke={INK} strokeWidth="2.5" />
+    </svg>
+  );
+}
 
 const Avatar3D = memo(function Avatar3D({
   mode = "idle",
@@ -1172,6 +1236,8 @@ const Avatar3D = memo(function Avatar3D({
 }) {
   const mounted = useMounted();
   const mouseRef = useRef({ x: 0, y: 0 });
+  const cleanupCtxRef = useRef(null);
+  const [ctxLost, setCtxLost] = useState(false);
   const camPos = cameraPosition || (variant === "bust" ? CAM_BUST : CAM_FULL);
 
   useEffect(() => {
@@ -1189,34 +1255,61 @@ const Avatar3D = memo(function Avatar3D({
     return () => {
       window.removeEventListener("mousemove", move);
       document.documentElement.removeEventListener("mouseleave", reset);
+      cleanupCtxRef.current?.();
+      cleanupCtxRef.current = null;
     };
   }, []);
 
+  const handleCreated = useCallback(
+    ({ gl, camera }) => {
+      camera.lookAt(0, camPos[1], 0);
+      cleanupCtxRef.current?.();
+      const canvas = gl.domElement;
+      const onLost = (e) => {
+        e.preventDefault();
+        setCtxLost(true);
+      };
+      const onRestored = () => setCtxLost(false);
+      canvas.addEventListener("webglcontextlost", onLost);
+      canvas.addEventListener("webglcontextrestored", onRestored);
+      cleanupCtxRef.current = () => {
+        canvas.removeEventListener("webglcontextlost", onLost);
+        canvas.removeEventListener("webglcontextrestored", onRestored);
+      };
+    },
+    [camPos]
+  );
+
   if (!mounted) return <div style={EMPTY_STYLE} />;
+
+  const fallback = <FallbackAvatar variant={variant} outfit={outfit} />;
 
   return (
     <div style={WRAP_STYLE}>
-      <Canvas
-        flat
-        frameloop={active ? "always" : "demand"}
-        dpr={[1, 1.5]}
-        gl={GL_OPTS}
-        camera={{ position: camPos, fov }}
-        onCreated={({ camera }) => camera.lookAt(0, camPos[1], 0)}
-        style={CANVAS_STYLE}
-      >
-        <ambientLight intensity={1.35} />
-        <directionalLight position={[3, 5, 5]} intensity={1.35} />
-        <directionalLight position={[-3, 2, 2]} intensity={0.45} />
-        <CharacterModel
-          mode={mode}
-          talking={talking}
-          dir={dir}
-          outfit={outfit}
-          variant={variant}
-          mouseRef={mouseRef}
-        />
-      </Canvas>
+      <CanvasErrorBoundary fallback={fallback}>
+        {ctxLost && fallback}
+        <Canvas
+          flat
+          frameloop={active ? "always" : "demand"}
+          dpr={[1, 1.5]}
+          gl={GL_OPTS}
+          camera={{ position: camPos, fov }}
+          onCreated={handleCreated}
+          style={CANVAS_STYLE}
+        >
+          <ambientLight intensity={1.35} />
+          <directionalLight position={[3, 5, 5]} intensity={1.35} />
+          <directionalLight position={[-3, 2, 2]} intensity={0.45} />
+          <CharacterModel
+            mode={mode}
+            talking={talking}
+            dir={dir}
+            outfit={outfit}
+            variant={variant}
+            mouseRef={mouseRef}
+          />
+        </Canvas>
+      </CanvasErrorBoundary>
     </div>
   );
 });
