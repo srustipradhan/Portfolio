@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { profile, projectTypes, budgets, timelines, services } from "@/lib/data";
+import { profile, enquiryOptions, services, techStackSummary } from "@/lib/data";
 
 const ease = [0.16, 1, 0.3, 1];
 const up = (d = 0) => ({ initial: { opacity: 0, y: 40 }, whileInView: { opacity: 1, y: 0 }, viewport: { once: true, margin: "-60px" }, transition: { duration: 0.7, delay: d, ease } });
@@ -28,67 +28,57 @@ const tiles = [
   { cls: "dark wide", ico: "pin", label: "Based in", value: profile.location },
 ];
 
-const steps = ["Project", "Budget", "You"];
-
-function Chips({ options, value, onToggle, multi }) {
-  return (
-    <div className="chips">
-      {options.map((o) => {
-        const on = multi ? value.includes(o) : value === o;
-        return (
-          <motion.button type="button" key={o} className={on ? "chip on" : "chip"} aria-pressed={on} onClick={() => onToggle(o)} whileTap={{ scale: 0.94 }} layout>
-            {on && <motion.span initial={{ scale: 0 }} animate={{ scale: 1 }} className="tick">✓</motion.span>}{o}
-          </motion.button>
-        );
-      })}
-    </div>
-  );
-}
+const EMPTY = { name: "", email: "", phone: "", company: "", intent: "", company_hp: "" };
 
 function Form() {
-  const [step, setStep] = useState(0);
-  const [dir, setDir] = useState(1);
   const [status, setStatus] = useState("idle"); // idle | sending | sent | mailto | error
   const [err, setErr] = useState("");
-  const [d, setD] = useState({ types: [], description: "", budget: "", timeline: "", name: "", email: "", company: "", phone: "", company_hp: "" });
+  const [d, setD] = useState(EMPTY);
   const set = (k, v) => { setD((x) => ({ ...x, [k]: v })); setErr(""); };
-  const toggleType = (t) => set("types", d.types.includes(t) ? d.types.filter((x) => x !== t) : [...d.types, t]);
 
-  const validate = (st) => {
-    if (st === 0) { if (!d.types.length) return "Pick at least one project type."; if (d.description.trim().length < 20) return "Tell me a bit more about the project (20+ characters)."; }
-    if (st === 1) { if (!d.budget) return "Choose a budget range."; if (!d.timeline) return "Choose a timeline."; }
-    if (st === 2) { if (!d.name.trim()) return "Please enter your name."; if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(d.email.trim())) return "Please enter a valid email."; }
+  const validate = () => {
+    if (!d.name.trim()) return "Please enter your name.";
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(d.email.trim())) return "Please enter a valid email.";
+    if (d.phone.replace(/\D/g, "").length < 7) return "Please enter a valid phone number.";
+    if (!d.intent) return "Please select one option for what you're looking for.";
     return "";
   };
-  const go = (n) => { setDir(n > step ? 1 : -1); setStep(n); setErr(""); };
-  const next = () => { const m = validate(step); if (m) return setErr(m); go(step + 1); };
 
-  const submit = async () => {
-    const m = validate(2); if (m) return setErr(m);
+  const submit = async (e) => {
+    e.preventDefault();
+    const m = validate();
+    if (m) return setErr(m);
     setStatus("sending"); setErr("");
     try {
-      const res = await fetch("/api/contact", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(d) });
+      const res = await fetch("/api/contact", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(d),
+      });
       if (res.status === 501) {
-        const subject = encodeURIComponent(`New project enquiry: ${d.types.join(", ")} (${d.name})`);
-        const lines = [`Project type: ${d.types.join(", ")}`, `Budget: ${d.budget}`, `Timeline: ${d.timeline}`];
-        if (d.company) lines.push(`Company / website: ${d.company}`);
-        if (d.phone) lines.push(`Phone / WhatsApp: ${d.phone}`);
-        const text = `${lines.join("\n")}\n\n${d.description}\n\n— ${d.name} (${d.email})`;
-        window.location.href = `mailto:${profile.email}?subject=${subject}&body=${encodeURIComponent(text)}`;
+        const subject = encodeURIComponent(`New enquiry: ${d.intent} (${d.name.trim()})`);
+        const lines = [
+          `What I'm looking for: ${d.intent}`,
+          `Name: ${d.name.trim()}`,
+          `Email: ${d.email.trim()}`,
+          `Phone number: ${d.phone.trim()}`,
+        ];
+        if (d.company.trim()) lines.push(`Company name: ${d.company.trim()}`);
+        window.location.href = `mailto:${profile.email}?subject=${subject}&body=${encodeURIComponent(lines.join("\n"))}`;
         return setStatus("mailto");
       }
       const json = await res.json();
       if (!res.ok || !json.ok) throw new Error(json.error || "Something went wrong.");
       setStatus("sent");
     } catch (e) {
-      setErr(e.message || "Something went wrong."); setStatus("error");
+      setErr(e.message || "Something went wrong.");
+      setStatus("error");
     }
   };
 
-  const reset = () => { setD({ types: [], description: "", budget: "", timeline: "", name: "", email: "", company: "", phone: "", company_hp: "" }); setStep(0); setStatus("idle"); setErr(""); };
+  const reset = () => { setD(EMPTY); setStatus("idle"); setErr(""); };
   const done = status === "sent" || status === "mailto";
   const first = d.name.trim().split(" ")[0];
-  const slide = { enter: (x) => ({ opacity: 0, x: x * 40 }), center: { opacity: 1, x: 0 }, exit: (x) => ({ opacity: 0, x: x * -40 }) };
 
   return (
     <motion.div className="form-card" {...up(0.15)}>
@@ -99,57 +89,71 @@ function Form() {
               <svg viewBox="0 0 80 80" width="60" height="60"><motion.path d="M20 42 L34 56 L60 26" fill="none" stroke="var(--black)" strokeWidth="8" strokeLinecap="round" strokeLinejoin="round" initial={{ pathLength: 0 }} animate={{ pathLength: 1 }} transition={{ duration: 0.5, delay: 0.25 }} /></svg>
             </div>
             <h3>{status === "sent" ? `Thanks${first ? `, ${first}` : ""}!` : "Almost there!"}</h3>
-            <p>{status === "sent" ? `I've received your project details and will reply to ${d.email} with next steps.` : "Your email app should have opened with your project details. Just press send."}</p>
-            <button type="button" className="again" onClick={reset}>Send another enquiry</button>
+            <p>{status === "sent" ? `I've received your details (${d.intent}) and will reply to ${d.email} shortly.` : "Your email app should have opened with your details. Just press send."}</p>
+            <button type="button" className="again" onClick={reset}>Send another message</button>
           </motion.div>
         ) : (
-          <motion.div key="form" exit={{ opacity: 0 }} className="wiz">
-            <div className="form-head"><h3>Start a project</h3><p>Answer three quick steps so I can understand what you need.</p></div>
-
-            <div className="prog" aria-label={`Step ${step + 1} of 3`}>
-              {steps.map((l, i) => (
-                <button type="button" key={l} className={i <= step ? "pstep on" : "pstep"} onClick={() => i < step && go(i)} disabled={i >= step}>
-                  <span className="pbar"><motion.i initial={false} animate={{ width: i <= step ? "100%" : "0%" }} transition={{ duration: 0.4 }} /></span>
-                  <small>{i + 1}. {l}</small>
-                </button>
-              ))}
+          <motion.div key="form" exit={{ opacity: 0 }} className="ct-form-wrap">
+            <div className="form-head">
+              <h3>Get in touch</h3>
+              <p>Fill in your contact details and choose what you need.</p>
             </div>
 
-            <form onSubmit={(e) => { e.preventDefault(); step < 2 ? next() : submit(); }} className="wiz-body">
-              <AnimatePresence mode="wait" custom={dir} initial={false}>
-                <motion.div key={step} custom={dir} variants={slide} initial="enter" animate="center" exit="exit" transition={{ duration: 0.28, ease }} className="wiz-step">
-                  {step === 0 && (<>
-                    <div className="field"><span>What do you need? <em>(select all that apply)</em></span><Chips options={projectTypes} value={d.types} onToggle={toggleType} multi /></div>
-                    <label className="field"><span>Tell me about the project</span><textarea rows={5} maxLength={3000} value={d.description} onChange={(e) => set("description", e.target.value)} placeholder="What are you building, who is it for, and what should it do?" /></label>
-                  </>)}
-                  {step === 1 && (<>
-                    <div className="field"><span>Budget range</span><Chips options={budgets} value={d.budget} onToggle={(v) => set("budget", v)} /></div>
-                    <div className="field"><span>When do you need it?</span><Chips options={timelines} value={d.timeline} onToggle={(v) => set("timeline", v)} /></div>
-                  </>)}
-                  {step === 2 && (<>
-                    <div className="row2">
-                      <label className="field"><span>Your name</span><input value={d.name} onChange={(e) => set("name", e.target.value)} maxLength={100} placeholder="Jane Doe" autoComplete="name" /></label>
-                      <label className="field"><span>Email</span><input type="email" value={d.email} onChange={(e) => set("email", e.target.value)} maxLength={200} placeholder="jane@company.com" autoComplete="email" /></label>
-                    </div>
-                    <div className="row2">
-                      <label className="field"><span>Company / website <em>(optional)</em></span><input value={d.company} onChange={(e) => set("company", e.target.value)} maxLength={150} placeholder="company.com" autoComplete="organization" /></label>
-                      <label className="field"><span>Phone / WhatsApp <em>(optional)</em></span><input type="tel" value={d.phone} onChange={(e) => set("phone", e.target.value)} maxLength={40} placeholder="+1 555 000 0000" autoComplete="tel" /></label>
-                    </div>
-                    <input tabIndex={-1} autoComplete="off" className="hp" aria-hidden="true" value={d.company_hp} onChange={(e) => set("company_hp", e.target.value)} />
-                  </>)}
-                </motion.div>
-              </AnimatePresence>
+            <form onSubmit={submit} className="ct-form" noValidate>
+              <div className="row2">
+                <label className="field">
+                  <span>Your name</span>
+                  <input value={d.name} onChange={(e) => set("name", e.target.value)} maxLength={100} placeholder="Jane Doe" autoComplete="name" required />
+                </label>
+                <label className="field">
+                  <span>Email</span>
+                  <input type="email" value={d.email} onChange={(e) => set("email", e.target.value)} maxLength={200} placeholder="jane@company.com" autoComplete="email" required />
+                </label>
+              </div>
+
+              <div className="row2">
+                <label className="field">
+                  <span>Phone number</span>
+                  <input type="tel" value={d.phone} onChange={(e) => set("phone", e.target.value)} maxLength={40} placeholder="+91 98765 43210" autoComplete="tel" required />
+                </label>
+                <label className="field">
+                  <span>Company name <em>(optional)</em></span>
+                  <input value={d.company} onChange={(e) => set("company", e.target.value)} maxLength={150} placeholder="Company name" autoComplete="organization" />
+                </label>
+              </div>
+
+              <div className="field">
+                <span>What are you looking for? <em>(select one)</em></span>
+                <div className="chips" role="radiogroup" aria-label="What are you looking for?">
+                  {enquiryOptions.map((o) => {
+                    const on = d.intent === o;
+                    return (
+                      <motion.button
+                        type="button"
+                        key={o}
+                        role="radio"
+                        aria-checked={on}
+                        className={on ? "chip on" : "chip"}
+                        onClick={() => set("intent", o)}
+                        whileTap={{ scale: 0.95 }}
+                      >
+                        {on && <motion.span initial={{ scale: 0 }} animate={{ scale: 1 }} className="tick">✓</motion.span>}
+                        {o}
+                      </motion.button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <input tabIndex={-1} autoComplete="off" className="hp" aria-hidden="true" value={d.company_hp} onChange={(e) => set("company_hp", e.target.value)} />
 
               <AnimatePresence>
                 {err && <motion.p className="form-err" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }}>{err}{status === "error" && <> You can also email <a href={`mailto:${profile.email}`}>{profile.email}</a>.</>}</motion.p>}
               </AnimatePresence>
 
-              <div className="wiz-nav">
-                {step > 0 && <button type="button" className="back" onClick={() => go(step - 1)}>← Back</button>}
-                <motion.button type="submit" className="send" disabled={status === "sending"} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }}>
-                  {status === "sending" ? <span className="spin" /> : step < 2 ? <>Continue <span>→</span></> : <>Send enquiry <span>↗</span></>}
-                </motion.button>
-              </div>
+              <motion.button type="submit" className="send" disabled={status === "sending"} whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.98 }}>
+                {status === "sending" ? <span className="spin" /> : <>Send message <span>↗</span></>}
+              </motion.button>
             </form>
           </motion.div>
         )}
@@ -166,12 +170,12 @@ export default function Contact() {
           <div className="label">( 05 ) Contact</div>
           <div className="ct-head">
             <motion.h2 className="ct-title" {...up()}>Let&apos;s work<br /><span>together.</span></motion.h2>
-            <motion.div className="ct-avail" {...up(0.1)}><i /> Available for freelance projects</motion.div>
+            <motion.div className="ct-avail" {...up(0.1)}><i /> Open to roles &amp; opportunities</motion.div>
           </div>
 
           <div className="ct-grid">
             <div className="ct-tiles">
-              <motion.p className="ct-intro" {...up()}>Need a mobile app built, fixed or published? Tell me about your project and I&apos;ll get back to you, or reach me directly.</motion.p>
+              <motion.p className="ct-intro" {...up()}>Looking to hire, collaborate, or work together? Leave your details or reach me directly.</motion.p>
               {tiles.map((t, i) => {
                 const inner = (
                   <>
@@ -190,7 +194,12 @@ export default function Contact() {
               })}
               <motion.div className="tile services wide" {...up(0.3)}>
                 <small>What I can build for you</small>
+                <p className="svc-sub">From concept to launch, across every layer.</p>
                 <div className="svc">{services.map((x) => <span key={x}>{x}</span>)}</div>
+                <div className="svc-stack">
+                  <small>Tech Stack</small>
+                  <p>{techStackSummary}</p>
+                </div>
               </motion.div>
             </div>
             <Form />

@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import Avatar3D from "./Avatar3D";
 import { replyToChat } from "@/lib/chat";
-import { getPreferredVoice, onVoicesChanged, setPreferredVoice, speakText, stopSpeaking, voiceOptions, voiceSupported } from "@/lib/voice";
+import { speakText, stopSpeaking, voiceSupported } from "@/lib/voice";
 import { scrollToSelector } from "@/lib/scroll";
 
 const replies = [
@@ -29,7 +29,7 @@ const replies = [
   },
   {
     q: "I want to hire you",
-    a: "Great call! Fill out the 3-step enquiry form below — I reply faster than an async await.",
+    a: "Great call! Fill out the contact form below — I reply faster than an async await.",
     go: "#contact",
   },
 ];
@@ -95,25 +95,7 @@ export default function Mascot() {
   const [voice, setVoice] = useState(false);
   const [speaking, setSpeaking] = useState(false);
   const [voiceNote, setVoiceNote] = useState("");
-  const [voices, setVoices] = useState([]);
-  const [voiceId, setVoiceId] = useState("");
   const [canSpeak, setCanSpeak] = useState(true);
-  useEffect(() => {
-    const load = () => {
-      setCanSpeak(voiceSupported());
-      const opts = voiceOptions();
-      setVoices(opts);
-      const saved = getPreferredVoice();
-      if (saved && opts.some((o) => o.id === saved)) setVoiceId(saved);
-      else if (opts[0]) setVoiceId(opts[0].id);
-    };
-    const t = setTimeout(load, 0);
-    const off = onVoicesChanged(load);
-    return () => {
-      clearTimeout(t);
-      off();
-    };
-  }, []);
   const [hidden, setHidden] = useState(false);
   const [typing, setTyping] = useState(false);
   const [ready, setReady] = useState(false);
@@ -124,14 +106,21 @@ export default function Mascot() {
   const actTimer = useRef(null);
   const msgId = useRef(0);
   const openRef = useRef(false);
+  const hiddenRef = useRef(false);
   const voiceRef = useRef(false);
   const speakingRef = useRef(false);
   const reduced = useRef(false);
 
   useEffect(() => {
+    const t = setTimeout(() => setCanSpeak(voiceSupported()), 0);
+    return () => clearTimeout(t);
+  }, []);
+
+  useEffect(() => {
     openRef.current = open;
+    hiddenRef.current = hidden;
     voiceRef.current = voice;
-  }, [open, voice]);
+  }, [open, hidden, voice]);
 
   useEffect(() => {
     if (logRef.current) {
@@ -201,9 +190,9 @@ export default function Mascot() {
     let t2;
     const t1 = setTimeout(() => {
       setReady(true);
-      if (openRef.current) return;
+      if (openRef.current || hiddenRef.current) return;
       setMode("wave");
-      say("Hey, I'm Srusti — click me to chat.");
+      say("Hey, I'm Srusti — click here to chat.");
       t2 = setTimeout(() => setMode((m) => (m === "wave" ? "idle" : m)), 2200);
     }, 900);
     return () => {
@@ -301,53 +290,52 @@ export default function Mascot() {
     }
   };
 
-  const onPickVoice = (e) => {
-    const id = e.target.value;
-    setVoiceId(id);
-    setPreferredVoice(id);
-    if (voiceRef.current) speak("Hi, I'm Srusti — how does this voice sound?");
-  };
-
   const hide = () => {
+    hiddenRef.current = true;
     openRef.current = false;
+    clearTimeout(hideTimer.current);
+    clearTimeout(replyTimer.current);
+    clearTimeout(talkTimer.current);
+    clearTimeout(actTimer.current);
     setOpen(false);
     setChatMode(false);
     setMsg(null);
+    setMode("idle");
+    speakingRef.current = false;
+    setSpeaking(false);
+    setTalking(false);
     setHidden(true);
     stopSpeaking();
   };
 
-  const toggleOpen = () => {
-    if (open) {
-      openRef.current = false;
-      setOpen(false);
-      setChatMode(false);
-      setMsg(null);
-      setMode("idle");
-      setTalking(false);
-      stopSpeaking();
-      return;
-    }
+  const openChat = () => {
+    hiddenRef.current = false;
     openRef.current = true;
+    setHidden(false);
     setChatMode(false);
     setOpen(true);
     setMode("wave");
     say("Ask away — pick a question or type below.");
   };
 
+  const closeChat = () => {
+    openRef.current = false;
+    setOpen(false);
+    setChatMode(false);
+    setMsg(null);
+    setMode("idle");
+    speakingRef.current = false;
+    setSpeaking(false);
+    setTalking(false);
+    stopSpeaking();
+  };
+
   return (
     <div className={`mascot-layer${open ? " open" : ""}`}>
       {hidden && (
-        <button
-          className="mascot-call"
-          onClick={() => {
-            setHidden(false);
-            setMode("wave");
-            setTimeout(() => setMode((m) => (m === "wave" ? "idle" : m)), 1800);
-          }}
-          data-hover
-        >
-          Show Srusti
+        <button type="button" className="mascot-call" onClick={openChat} data-hover>
+          <i aria-hidden="true" />
+          Chat with Srusti
         </button>
       )}
       {!hidden && (
@@ -361,9 +349,20 @@ export default function Mascot() {
             {(open || msg) && (
               <motion.div
                 key={open ? "panel" : "bubble"}
-                className={`bubble l${open ? " panel" : ""}`}
+                className={`bubble l${open ? " panel" : " teaser"}`}
+                role={!open ? "button" : undefined}
+                tabIndex={!open ? 0 : undefined}
                 onPointerDown={(e) => e.stopPropagation()}
-                onClick={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (!open) openChat();
+                }}
+                onKeyDown={(e) => {
+                  if (!open && (e.key === "Enter" || e.key === " ")) {
+                    e.preventDefault();
+                    openChat();
+                  }
+                }}
                 initial={{ opacity: 0, scale: 0.9, y: 10 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.9, y: 8 }}
@@ -423,21 +422,10 @@ export default function Mascot() {
                           </g>
                         </svg>
                       </button>
-                      <button type="button" className="xbtn" onClick={toggleOpen} aria-label="Close chat">
+                      <button type="button" className="xbtn" onClick={closeChat} aria-label="Close chat">
                         ×
                       </button>
                     </span>
-                  </div>
-                )}
-
-                {open && voice && voices.length > 1 && (
-                  <div className="voice-bar">
-                    <label htmlFor="srusti-voice">Voice</label>
-                    <select id="srusti-voice" value={voiceId} onChange={onPickVoice}>
-                      {voices.map((v) => (
-                        <option key={v.id} value={v.id}>{v.label}</option>
-                      ))}
-                    </select>
                   </div>
                 )}
 
@@ -521,12 +509,13 @@ export default function Mascot() {
             data-hover
             role="button"
             tabIndex={0}
-            aria-label="Chat with Srusti"
-            onClick={toggleOpen}
+            aria-label="Hide character"
+            title="Click character to hide"
+            onClick={hide}
             onKeyDown={(e) => {
               if (e.key === "Enter" || e.key === " ") {
                 e.preventDefault();
-                toggleOpen();
+                hide();
               }
             }}
           >
